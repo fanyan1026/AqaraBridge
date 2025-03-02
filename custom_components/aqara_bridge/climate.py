@@ -1,6 +1,18 @@
 import logging
 import re
-from homeassistant.components.climate import *
+from homeassistant.components.climate import (
+    FAN_AUTO,
+    FAN_HIGH,
+    FAN_LOW,
+    FAN_MEDIUM,
+    PRESET_BOOST,
+    PRESET_NONE,
+    SWING_OFF,
+    SWING_ON,
+    ClimateEntityFeature,
+    HVACMode,
+)
+
 
 from .core.aiot_manager import (
     AiotManager,
