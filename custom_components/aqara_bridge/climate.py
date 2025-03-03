@@ -9,6 +9,7 @@ from homeassistant.components.climate import (
     PRESET_NONE,
     SWING_OFF,
     SWING_ON,
+    ClimateEntity,
     ClimateEntityFeature,
     HVACMode,
 )
@@ -87,81 +88,28 @@ P3_FAN_ATTR_RES_MAPPING = {
     FAN_HIGH: "3",
 }
 
-T1_MODE_RES_ATTR_MAPPING = {
-    "0": HVACMode.AUTO,
-    "1": HVACMode.COOL,
-    "2": HVACMode.DRY,
-    "3": HVACMode.FAN_ONLY,
-    "4": HVACMode.HEAT,
-}
-
-T1_MODE_ATTR_RES_MAPPING = {
-    HVACMode.AUTO: "0",
-    HVACMode.COOL: "1",
-    HVACMode.DRY: "2",
-    HVACMode.FAN_ONLY: "3",
-    HVACMode.HEAT: "4",
-}
-
-S3_MODE_RES_ATTR_MAPPING = {
-    "0": HVACMode.HEAT,
-    "1": HVACMode.COOL,
-    "4": HVACMode.FAN_ONLY,
-}
-
-S3_MODE_ATTR_RES_MAPPING = {
-    HVACMode.HEAT: "0",
-    HVACMode.COOL: "1",
-    HVACMode.FAN_ONLY: "4",
-}
-
-S3_FAN_RES_ATTR_MAPPING = {
-    "0": FAN_LOW,
-    "1": FAN_MEDIUM,
-    "2": FAN_HIGH,
-    "3": FAN_AUTO,
-}
-
-S3_FAN_ATTR_RES_MAPPING = {
-    FAN_LOW: "0",
-    FAN_MEDIUM: "1",
-    FAN_HIGH: "2",
-    FAN_AUTO: "3",
-}
-
-
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    manager: AiotManager = hass.data[DOMAIN][HASS_DATA_AIOT_MANAGER]
-    cls_entities = {
-        "airrtc_agl001": AiotAirrtcAgl001Entity,
-        "airrtc_pcacn2": AiotAirrtcPcacn2Entity,
-        "airrtc_acn02": AiotAirrtcAcn02Entity,
-        "ac_partner_p3": AiotACPartnerP3Entity,
-        "airrtc_tcpecn02": AiotAirrtcTcpecn02Entity,
-        "airrtc_vrfegl01": AiotAirrtcVrfegl01Entity,
-    }
-    await manager.async_add_entities(
-        config_entry, TYPE, cls_entities, async_add_entities
-    )
-
-
 class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
     def __init__(self, hass, device, res_params, channel=None, **kwargs):
         AiotEntityBase.__init__(self, hass, device, res_params, TYPE, channel, **kwargs)
         self._attr_temperature_unit = kwargs.get("temperature_unit")
-        self._attr_hvac_modes = kwargs.get("hvac_modes")
-        self._attr_fan_modes = kwargs.get("fan_modes")
-        self._attr_swing_modes = kwargs.get("swing_modes")
-        self._attr_preset_modes = kwargs.get("preset_modes")
-        self._attr_target_temperature_step = kwargs.get("target_temperature_step")
+        self._attr_hvac_modes = kwargs.get("hvac_modes", [HVACMode.AUTO, HVACMode.COOL, HVACMode.HEAT, HVACMode.DRY, HVACMode.FAN_ONLY])
+        self._attr_fan_modes = kwargs.get("fan_modes", [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH])
+        self._attr_swing_modes = kwargs.get("swing_modes", [SWING_OFF, SWING_ON])
+        self._attr_preset_modes = kwargs.get("preset_modes", [PRESET_NONE, PRESET_BOOST])
+        self._attr_target_temperature_step = kwargs.get("target_temperature_step", 0.5)  # Initialize to 0.5 degrees
 
-        self._attr_max_temp = kwargs.get("max_temp")
-        self._attr_min_temp = kwargs.get("min_temp")
-        self._attr_target_temperature_high = kwargs.get("max_temp")
-        self._attr_target_temperature_low = kwargs.get("min_temp")
-
+        self._attr_max_temp = kwargs.get("max_temp", 30)
+        self._attr_min_temp = kwargs.get("min_temp", 16)
+        self._attr_target_temperature_high = kwargs.get("max_temp", 30)
+        self._attr_target_temperature_low = kwargs.get("min_temp", 16)
+        
+        self._attr_target_temperature = kwargs.get("target_temperature", 22)
         self._attr_preset_mode = None
+        self._attr_hvac_mode = HVACMode.OFF 
+        self._attr_fan_mode = FAN_AUTO 
+        self._attr_swing_mode = SWING_OFF 
 
+        
     def convert_res_to_attr(self, res_name, res_value):
         if res_name == "ac_fun_ctl":
             self.ac_fun_ctl_to_attr(res_value)
@@ -186,9 +134,9 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
             light = match.group(6)  # L值（可能为None）
             light = int(light) if light is not None else None
 
-            if power == 1:
+            if power == 0:
                 self._attr_hvac_mode = HVACMode.OFF
-            elif power == 0:
+            elif power == 1:
                 self._attr_hvac_mode = P3_MODE_RES_ATTR_MAPPING.get(
                     str(mode), HVACMode.AUTO
                 )
@@ -200,6 +148,7 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
 
             if swing == 0:
                 self._attr_swing_mode = SWING_ON
+                
             else:
                 self._attr_swing_mode = SWING_OFF
 
@@ -226,8 +175,9 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         fan = P3_FAN_ATTR_RES_MAPPING.get(self._attr_fan_mode, "2")
 
         swing = 0 if self._attr_swing_mode == SWING_ON else 1
-        light = None  # Assuming light is not used, or you can set it as needed
-
+        
+        light = None
+        
         if attr == "hvac_mode":
             old_mode = self._attr_hvac_mode
             if value == HVACMode.OFF:
@@ -256,30 +206,65 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         # _LOGGER.info(f"ac_fun_ctl: {result}")
         return result
 
+
     async def async_set_hvac_mode(self, hvac_mode):
-        """Set new target hvac mode."""
-        result = self.attr_to_ac_fun_ctl("hvac_mode", hvac_mode)
-        await self.async_set_res_value("ac_fun_ctl", result)
+        _LOGGER.debug(f"Setting HVAC mode to {hvac_mode}")
+        try:
+            # 确保 hvac_mode 的值在有效范围内
+            if hvac_mode not in [HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO, HVACMode.DRY, HVACMode.FAN_ONLY, HVACMode.OFF]:
+                _LOGGER.error(f"Invalid HVAC mode: {hvac_mode}")
+                return
+            command = self.attr_to_ac_fun_ctl("hvac_mode", hvac_mode)
+            _LOGGER.debug(f"Command to send: {command}")
+            await self.async_set_res_value("ac_fun_ctl", command)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set HVAC mode: {e}")
 
     async def async_set_temperature(self, **kwargs):
-        """Set new target temperature."""
         temp = kwargs.get("temperature")
-        result = self.attr_to_ac_fun_ctl("target_temperature", temp)
-        await self.async_set_res_value("ac_fun_ctl", result)
+        _LOGGER.debug(f"Setting temperature to {temp}")
+        try:
+            if temp < self._attr_min_temp or temp > self._attr_max_temp:
+                _LOGGER.error(f"Invalid temperature: {temp}")
+                return
+            command = self.attr_to_ac_fun_ctl("target_temperature", temp)
+            _LOGGER.debug(f"Command to send: {command}")
+            await self.async_set_res_value("ac_fun_ctl", command)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set temperature: {e}")
 
     async def async_set_fan_mode(self, fan_mode):
-        """Set new target fan mode."""
-        result = self.attr_to_ac_fun_ctl("fan_mode", fan_mode)
-        await self.async_set_res_value("ac_fun_ctl", result)
+        _LOGGER.debug(f"Setting fan mode to {fan_mode}")
+        try:
+            if fan_mode not in [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]:
+                _LOGGER.error(f"Invalid fan mode: {fan_mode}")
+                return
+            command = self.attr_to_ac_fun_ctl("fan_mode", fan_mode)
+            _LOGGER.debug(f"Command to send: {command}")
+            await self.async_set_res_value("ac_fun_ctl", command)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set fan mode: {e}")
 
     async def async_set_swing_mode(self, swing_mode):
-        """Set new target swing operation."""
-        result = self.attr_to_ac_fun_ctl("swing_mode", swing_mode)
-        await self.async_set_res_value("ac_fun_ctl", result)
+        _LOGGER.debug(f"Setting swing mode to {swing_mode}")
+        try:
+            if swing_mode not in [SWING_ON, SWING_OFF]:
+                _LOGGER.error(f"Invalid swing mode: {swing_mode}")
+                return
+            command = self.attr_to_ac_fun_ctl("swing_mode", swing_mode)
+            _LOGGER.debug(f"Command to send: {command}")
+            await self.async_set_res_value("ac_fun_ctl", command)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set swing mode: {e}")
 
     async def async_set_preset_mode(self, preset_mode):
-        """Set new target preset mode."""
-        if preset_mode == PRESET_BOOST:
-            await self.async_set_res_value("ac_quick_cool", "1")
-        elif preset_mode == PRESET_NONE:
-            await self.async_set_res_value("ac_quick_cool", "0")
+        _LOGGER.debug(f"Setting preset mode to {preset_mode}")
+        try:
+            if preset_mode not in [PRESET_NONE, PRESET_BOOST]:
+                _LOGGER.error(f"Invalid preset mode: {preset_mode}")
+                return
+            command = "1" if preset_mode == PRESET_BOOST else "0"
+            _LOGGER.debug(f"Command to send: {command}")
+            await self.async_set_res_value("ac_quick_cool", command)
+        except Exception as e:
+            _LOGGER.error(f"Failed to set preset mode: {e}")
