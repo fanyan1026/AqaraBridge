@@ -767,8 +767,6 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         self._attr_light_mode = LIGHT_ON
         self._attr_preset_mode = None
         
-    def schedule_update_ha_state(self):
-
     def convert_res_to_attr(self, res_name, res_value):
         if res_name == "ac_fun_ctl":
             self.ac_fun_ctl_to_attr(res_value)
