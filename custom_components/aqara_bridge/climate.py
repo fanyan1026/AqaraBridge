@@ -75,6 +75,9 @@ P3_MODE_ATTR_RES_MAPPING = {
     HVACMode.DRY: "5"
 }
 
+LIGHT_ON = "on"
+LIGHT_OFF = "off"
+
 P3_FAN_RES_ATTR_MAPPING = {
     "0": FAN_AUTO,
     "1": FAN_LOW,
@@ -757,7 +760,7 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         self._attr_target_temperature_high = kwargs.get("max_temp")
         self._attr_target_temperature_low = kwargs.get("min_temp")
         
-        self._attr_hvac_mode = HVACMode.AUTO
+        self._attr_hvac_mode = HVACMode.OFF
         self._attr_target_temperature = 24
         self._attr_fan_mode = FAN_AUTO
         self._attr_swing_mode = SWING_ON
@@ -765,9 +768,7 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         self._attr_preset_mode = None
         
     def schedule_update_ha_state(self):
-        # This is a placeholder for the actual implementation
-        pass
-        
+
     def convert_res_to_attr(self, res_name, res_value):
         if res_name == "ac_fun_ctl":
             self.ac_fun_ctl_to_attr(res_value)
@@ -776,12 +777,13 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
 
     def ac_fun_ctl_to_attr(self, value):
         """空调功能控制 8.0.2116(P3) 转HA属性."""
+        _LOGGER.debug(f"Received ac_fun_ctl value: {value}")
         if value:
             # 用于处理ac_fun_ctl内容
             pattern = r"^P(\d+)_M(\d+)_T(\d+)_S(\d+)_D(\d+)(?:_L(\d+))?$"
             match = re.fullmatch(pattern, value)
             if not match:
-                _LOGGER.error(f"Invalid 8.0.2116(P3) format.")
+                _LOGGER.error(f"Invalid acKey format: {value}")
                 return
             # 提取参数（注意group6可能为None）
             power = int(match.group(1))  # P值
@@ -810,10 +812,27 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
                 self._attr_light_mode = LIGHT_ON if light == 0 else LIGHT_OFF
 
             self.schedule_update_ha_state()
+            
+    def ac_quick_cool_to_attr(self, value):
+        value = int(value)
+        if value == 1:
+            self._attr_preset_mode = PRESET_BOOST
+        elif value == 0:
+            self._attr_preset_mode = PRESET_NONE
 
+        self.schedule_update_ha_state()
+        
+        
     def attr_to_ac_fun_ctl(self, attr, value):
         """HA属性 转 空调功能控制 8.0.2116(P3)."""
-
+        
+        power = 1 if self._attr_hvac_mode == HVACMode.OFF else 0
+        mode = P3_MODE_ATTR_RES_MAPPING.get(self._attr_hvac_mode, "2")
+        temp = str(int(self._attr_target_temperature))  # 确保temp被赋值
+        fan = P3_FAN_ATTR_RES_MAPPING.get(self._attr_fan_mode, "0")
+        swing = 0 if self._attr_swing_mode == SWING_ON else 1
+        light = 0 if self._attr_light_mode == LIGHT_ON else 1
+        
         if attr == "hvac_mode":
             old_mode = self._attr_hvac_mode
             if value == HVACMode.OFF:
@@ -873,6 +892,3 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
             await self.async_set_res_value("ac_quick_cool", "1")
         elif preset_mode == PRESET_NONE:
             await self.async_set_res_value("ac_quick_cool", "0")
-
-
-   
