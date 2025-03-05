@@ -1,33 +1,19 @@
 import logging
 import re
-from homeassistant.components.climate import (
-    FAN_AUTO,
-    FAN_HIGH,
-    FAN_LOW,
-    FAN_MEDIUM,
-    PRESET_BOOST,
-    PRESET_NONE,
-    SWING_OFF,
-    SWING_ON,
-    ClimateEntity,
-    HVACMode,
-)
-
-from .core.aiot_manager import AiotEntityBase
-from .core.const import DOMAIN, HASS_DATA_AIOT_MANAGER
+from homeassistant.components.climate import *
 
 from .core.aiot_manager import (
     AiotManager,
     AiotEntityBase,
 )
 
+from .core.const import DOMAIN, HASS_DATA_AIOT_MANAGER
+
 TYPE = "climate"
 
 _LOGGER = logging.getLogger(__name__)
 
 DATA_KEY = f"{TYPE}.{DOMAIN}"
-
-
 
 # HA模式到设备模式值的映射
 P3_MODE_ATTR_RES_MAPPING = {
@@ -67,6 +53,20 @@ P3_FAN_RES_ATTR_MAPPING = {
 }
 
 
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    manager: AiotManager = hass.data[DOMAIN][HASS_DATA_AIOT_MANAGER]
+    cls_entities = {
+        "airrtc_agl001": AiotAirrtcAgl001Entity,
+        "airrtc_pcacn2": AiotAirrtcPcacn2Entity,
+        "airrtc_acn02": AiotAirrtcAcn02Entity,
+        "ac_partner_p3": AiotACPartnerP3Entity,
+        "airrtc_tcpecn02": AiotAirrtcTcpecn02Entity,
+        "airrtc_vrfegl01": AiotAirrtcVrfegl01Entity,
+    }
+    await manager.async_add_entities(
+        config_entry, TYPE, cls_entities, async_add_entities
+    )
+
 class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
     def __init__(self, hass, device, res_params, channel=None, **kwargs):
         AiotEntityBase.__init__(self, hass, device, res_params, TYPE, channel, **kwargs)
@@ -81,7 +81,7 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         self._attr_min_temp = kwargs.get("min_temp")
         self._attr_target_temperature_high = kwargs.get("max_temp")
         self._attr_target_temperature_low = kwargs.get("min_temp")
-        
+
         self._attr_hvac_mode = HVACMode.OFF
         self._attr_last_hvac_mode = HVACMode.AUTO  # 新增：记录最后一次有效模式
         self._attr_target_temperature = 24
@@ -96,7 +96,7 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         elif res_name == "ac_quick_cool":
             self.ac_quick_cool_to_attr(res_value)
 
-    def ac_fun_ctl_to_attr(self, value):
+  def ac_fun_ctl_to_attr(self, value):
         """空调功能控制 P3 转HA属性."""
         _LOGGER.debug(f"Received ac_fun_ctl value: {value}")
         if value:
@@ -131,6 +131,7 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
 
             self.schedule_update_ha_state()
 
+
     def ac_quick_cool_to_attr(self, value):
         try:
             value = int(value)
@@ -145,7 +146,8 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         except ValueError:
             _LOGGER.error(f"ac_quick_cool 值格式错误: {value}")
         self.schedule_update_ha_state()
-
+        
+        
     def attr_to_ac_fun_ctl(self, attr, value):
         """生成控制指令（如 P0_M4_T19_S1_D1_L0）"""
         # 生成 power 参数
@@ -185,39 +187,29 @@ class AiotACPartnerP3Entity(AiotEntityBase, ClimateEntity):
         _LOGGER.debug(f"生成控制指令: {result}")
         return result
 
-    async def async_turn_on(self):
-        """覆盖父类方法：开启空调时使用最后一次记录的模式"""
-        _LOGGER.debug("Turning on the air conditioner")
-        await self.async_set_hvac_mode(self._attr_last_hvac_mode)
-
     async def async_set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
-        _LOGGER.debug(f"Setting HVAC mode to {hvac_mode}")
         result = self.attr_to_ac_fun_ctl("hvac_mode", hvac_mode)
         await self.async_set_res_value("ac_fun_ctl", result)
 
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         temp = kwargs.get("temperature")
-        _LOGGER.debug(f"Setting temperature to {temp}")
         result = self.attr_to_ac_fun_ctl("target_temperature", temp)
         await self.async_set_res_value("ac_fun_ctl", result)
 
     async def async_set_fan_mode(self, fan_mode):
         """Set new target fan mode."""
-        _LOGGER.debug(f"Setting fan mode to {fan_mode}")
         result = self.attr_to_ac_fun_ctl("fan_mode", fan_mode)
         await self.async_set_res_value("ac_fun_ctl", result)
 
     async def async_set_swing_mode(self, swing_mode):
         """Set new target swing operation."""
-        _LOGGER.debug(f"Setting swing mode to {swing_mode}")
         result = self.attr_to_ac_fun_ctl("swing_mode", swing_mode)
         await self.async_set_res_value("ac_fun_ctl", result)
 
     async def async_set_preset_mode(self, preset_mode):
         """Set new target preset mode."""
-        _LOGGER.debug(f"Setting preset mode to {preset_mode}")
         if preset_mode == PRESET_BOOST:
             await self.async_set_res_value("ac_quick_cool", "1")
         elif preset_mode == PRESET_NONE:
